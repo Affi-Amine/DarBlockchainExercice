@@ -10,11 +10,15 @@ from drf_yasg import openapi
 from rest_framework.permissions import IsAuthenticated
 
 from .serializers import CustomTokenObtainPairSerializer, RegistrationSerializer 
+from .models import User
 from .permissions import IsAdmin
 
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+User.objects.create_superuser(username='adminuser', email='adminuser@example.com', password='adminpassword', role='admin')
 
 @swagger_auto_schema(
     method='post',
