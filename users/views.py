@@ -18,7 +18,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-User.objects.create_superuser(username='adminuser', email='adminuser@example.com', password='adminpassword', role='admin')
+#User.objects.create_superuser(username='adminuser', email='adminuser@example.com', password='adminpassword', role='admin')
 
 @swagger_auto_schema(
     method='post',
@@ -35,17 +35,24 @@ def register(request):
         serializer = RegistrationSerializer(data=request.data)
         if serializer.is_valid():
             try:
-                # Validate password strength
-                validate_password(request.data['password1'])
+                validate_password(request.data['password1']) #password validation
             except ValidationError as e:
                 return Response({"error": e.messages}, status=status.HTTP_400_BAD_REQUEST)
 
             user = serializer.save()
+
+            # Admin role assignment (USE WITH EXTREME CAUTION)
+            if serializer.validated_data.get('role') == 'admin':
+                user.is_staff = True  # Make the user an admin in Django
+                user.is_superuser = True
+                user.save()
+
+
             logger.info(f"New user registered: {user.username}")
             return Response({"message": "User registered successfully"}, status=status.HTTP_201_CREATED)
         else:
             logger.warning(f"Failed registration attempt: {serializer.errors}")
-            return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     return Response({"error": "Invalid request method"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 class CustomTokenObtainPairView(TokenObtainPairView):

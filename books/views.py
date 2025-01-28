@@ -1,15 +1,20 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, generics, permissions, pagination
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .models import Book
-from .serializers import BookSerializer
+from .models import Book, Review
+from .serializers import BookSerializer, ReviewSerializer
 from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAdminUser
 import requests
 from rest_framework.generics import RetrieveAPIView, UpdateAPIView, DestroyAPIView
+from rest_framework.generics import UpdateAPIView, DestroyAPIView
+from rest_framework.permissions import BasePermission, SAFE_METHODS
+from rest_framework.exceptions import PermissionDenied
+from rest_framework import status
+
 
 
 class BookCreateView(APIView):
@@ -213,3 +218,96 @@ class BookDeleteView(DestroyAPIView):
         Delete a book by ID.
         """
         return self.destroy(request, *args, **kwargs)
+
+class ReviewCreateView(generics.CreateAPIView):
+
+    queryset = Review.objects.all()
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        book_id = self.kwargs.get('book')  
+
+        try:
+            book = Book.objects.get(pk=book_id) 
+        except Book.DoesNotExist:
+            return Response({'detail': 'Book not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer.save(user=self.request.user, book=book)
+        
+class BookReviewsPagination(pagination.PageNumberPagination):
+    page_size = 10  
+    page_size_query_param = 'page_size' 
+    max_page_size = 100 
+
+
+class BookReviewsList(generics.ListAPIView):
+    serializer_class = ReviewSerializer
+    pagination_class = BookReviewsPagination
+
+    def get_queryset(self):
+        book_id = self.kwargs['book_id']
+        try:
+            book = Book.objects.get(pk=book_id)
+            return book.reviews.all() 
+        except Book.DoesNotExist:
+            return Review.objects.none()
+        
+
+class IsOwnerOrAdmin(BasePermission):
+    """
+    Custom permission to only allow owners of an object or admins to edit it.
+    """
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS:
+            return True
+
+        return obj.user == request.user or request.user.is_staff
+
+
+class ReviewUpdateView(UpdateAPIView):
+    queryset = Review.objects.all()
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
+
+    @swagger_auto_schema( 
+        operation_description="Update a review.",
+        responses={
+            200: ReviewSerializer,
+            403: "Permission denied",
+            404: "Review not found",
+        }
+    )
+    def put(self, request, *args, **kwargs):
+        """
+        Update an existing review. Only the owner or an admin can perform this action.
+        """
+        review = self.get_object() 
+        serializer = self.get_serializer(review, data=request.data, partial=True) 
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+
+
+
+class ReviewDeleteView(DestroyAPIView):
+    queryset = Review.objects.all()
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
+
+    @swagger_auto_schema( 
+        operation_description="Delete a review.",
+        responses={
+            204: "Review deleted successfully",
+            403: "Permission denied",
+            404: "Review not found",
+        }
+    )
+    def delete(self, request, *args, **kwargs):
+        review = self.get_object() -
+        if not self.has_permission(request, review):
+            raise PermissionDenied("You do not have permission to delete this review.")
+
+        self.perform_destroy(review)
+        return Response(status=status.HTTP_204_NO_CONTENT)

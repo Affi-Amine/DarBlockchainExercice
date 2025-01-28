@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Book
+from .models import Book, Review
 
 class BookSerializer(serializers.ModelSerializer):
     title = serializers.CharField(
@@ -31,3 +31,9 @@ class BookSerializer(serializers.ModelSerializer):
         if value and value not in allowed_genres:
             raise serializers.ValidationError(f"Genre '{value}' is not allowed.")
         return value
+
+class ReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Review
+        fields = ['id', 'book', 'user', 'rating', 'comment', 'created_at']
+        read_only_fields = ['id', 'user', 'created_at']
