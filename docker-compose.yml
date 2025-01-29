@@ -1,0 +1,60 @@
+services:
+  web:
+    build: .
+    container_name: django_app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=book_review_service.settings
+      - DATABASE_HOST=db
+      - DATABASE_ENGINE=django.db.backends.postgresql
+      - DATABASE_NAME=darblockchain
+      - DATABASE_USER=admin
+      - DATABASE_PASSWORD=admin
+      - DATABASE_PORT=5432
+      - SECRET_KEY="q@d&npxdld)(@3_x^9hv69g0jwvu(@yo^g=*50d# v2w9io6@ =6"
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - static_volume:/app/static
+
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    restart: always
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=darblockchain
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d darblockchain"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:latest  
+    container_name: redis_cache
+    restart: always
+    ports:  
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  static_volume: 

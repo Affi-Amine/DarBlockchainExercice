@@ -1,0 +1,7 @@
+myenv
+.env
+debug.log
+docker-compose
+Dockerfile
+dump.rdb
+

@@ -12,9 +12,12 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+from decouple import config
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -23,12 +26,13 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-z6#naoe7#*fw157%#!h=@1=$)*a!cs0mturodge1&uby-h)h5d'
+#SECRET_KEY = 'django-insecure-z6#naoe7#*fw157%#!h=@1=$)*a!cs0mturodge1&uby-h)h5d'
+SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0"]
 
 AUTH_USER_MODEL = 'users.User'
 
@@ -112,12 +116,12 @@ WSGI_APPLICATION = 'book_review_service.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'darblockchain',             
-        'USER': 'admin',            
-        'PASSWORD': 'admin',     
-        'HOST': 'localhost',             
-        'PORT': '5432',                 
+        'ENGINE': config('DATABASE_ENGINE'),
+        'NAME': config('DATABASE_NAME'),        
+        'USER': config('DATABASE_USER'),     
+        'PASSWORD': config('DATABASE_PASSWORD'),
+        'HOST': config('DATABASE_HOST'),
+        'PORT': config('DATABASE_PORT'),    
     }
 }
 
@@ -195,12 +199,14 @@ LOGGING = {
     },
 }
 
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")  # Default to "redis" inside Docker
+REDIS_PORT = os.getenv("REDIS_PORT", "6379")
+
 CACHES = {
     "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/0", 
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        }
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/1",
     }
 }
+
+CELERY_BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
