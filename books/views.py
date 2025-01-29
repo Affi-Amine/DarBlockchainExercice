@@ -14,6 +14,11 @@ from rest_framework.generics import UpdateAPIView, DestroyAPIView
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 from rest_framework.exceptions import PermissionDenied
 from rest_framework import status
+from django.views.decorators.cache import cache_page
+from django.core.cache import cache
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import SearchFilter
+
 
 
 
@@ -45,9 +50,11 @@ class BookCreateView(APIView):
         """
         serializer = BookSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            book = serializer.save()
+            cache.delete_pattern("book_list_*")  # Invalidate all cached book lists
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class BookListView(ListAPIView):
     queryset = Book.objects.all()
@@ -81,13 +88,23 @@ class BookListView(ListAPIView):
         }
     )
     def get(self, request, *args, **kwargs):
-        return super().get(request, *args, **kwargs)
+        cache_key = f"book_list_page_{request.GET.get('page', 1)}_limit_{request.GET.get('limit', 10)}"
+        cached_data = cache.get(cache_key)
+
+        if cached_data:
+            return Response(cached_data)
+
+        # If not cached, fetch data and cache it
+        response = super().get(request, *args, **kwargs)
+        cache.set(cache_key, response.data, timeout=300)  # Cache for 5 minutes
+
+        return response
 
 
 class BookDetailView(RetrieveAPIView):
     queryset = Book.objects.all()
     serializer_class = BookSerializer
-    lookup_field = 'id'  # Use 'id' to retrieve the book
+    lookup_field = 'id'  
 
     @swagger_auto_schema(
         operation_description="Retrieve details for a specific book by ID.",
@@ -109,13 +126,10 @@ class BookDetailView(RetrieveAPIView):
         }
     )
     def get(self, request, *args, **kwargs):
-        # Fetch the book from the database
         book = self.get_object()
 
-        # Fetch additional metadata from Google Books API
         google_books_data = self.fetch_google_books_metadata(book.title, book.author)
 
-        # Combine the internal and external data
         response_data = self.serializer_class(book).data
         response_data['google_books_metadata'] = google_books_data
 
@@ -123,24 +137,29 @@ class BookDetailView(RetrieveAPIView):
 
     def fetch_google_books_metadata(self, title, author):
         """
-        Fetch metadata from Google Books API.
+        Fetch metadata from Google Books API with caching.
         """
+        cache_key = f"google_books:{title}:{author}"  
+        cached_data = cache.get(cache_key)  
+
+        if cached_data is not None:
+            return cached_data 
+
         base_url = "https://www.googleapis.com/books/v1/volumes"
         query = f"intitle:{title}+inauthor:{author}"
         params = {
             'q': query,
-            'maxResults': 1  # Fetch only the first result
+            'maxResults': 1
         }
 
         try:
             response = requests.get(base_url, params=params)
-            response.raise_for_status()  # Raise an exception for HTTP errors
+            response.raise_for_status()
             data = response.json()
 
             if data.get('totalItems', 0) > 0:
-                # Extract relevant metadata from the first result
                 book_info = data['items'][0]['volumeInfo']
-                return {
+                api_data = {
                     'description': book_info.get('description', 'No description available'),
                     'published_date': book_info.get('publishedDate', 'Unknown'),
                     'publisher': book_info.get('publisher', 'Unknown'),
@@ -148,12 +167,65 @@ class BookDetailView(RetrieveAPIView):
                     'ratings_count': book_info.get('ratingsCount', 0),
                     'thumbnail': book_info.get('imageLinks', {}).get('thumbnail', 'No thumbnail available')
                 }
+                cache.set(cache_key, api_data, 60 * 60 * 24)  # Cache for 24 hours (adjust as needed)
+                return api_data
             else:
-                return {"error": "No matching book found in Google Books"}
+                return {"error": "No matching book found in Google Books"} 
+
         except requests.RequestException as e:
-            return {"error": f"Failed to fetch metadata from Google Books: {str(e)}"}
+            return {"error": f"Failed to fetch metadata from Google Books: {str(e)}"} 
         
 class BookUpdateView(UpdateAPIView):
+    queryset = Book.objects.all()
+    serializer_class = BookSerializer
+    lookup_field = 'id'  
+
+    @swagger_auto_schema(
+        operation_description="Update details for a specific book by ID.",
+        manual_parameters=[
+            openapi.Parameter(
+                name='id',
+                in_=openapi.IN_PATH,
+                description="The ID of the book to update.",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        request_body=BookSerializer,
+        responses={
+            200: openapi.Response(
+                description="Book updated successfully",
+                schema=BookSerializer
+            ),
+            400: "Invalid data",
+            404: "Book not found",
+        }
+    )
+    def patch(self, request, *args, **kwargs):
+        """
+        Partially update a book's details.
+        """
+        response = self.partial_update(request, *args, **kwargs)
+        book_id = kwargs.get('id')
+
+        # Clear caches after updating a book
+        cache.delete_pattern("book_list_*")  # Invalidate book lists
+        cache.delete(f"book_detail_{book_id}")  # Invalidate the specific book cache
+
+        return response
+
+    def put(self, request, *args, **kwargs):
+        """
+        Fully update a book's details.
+        """
+        response = self.update(request, *args, **kwargs)
+        book_id = kwargs.get('id')
+
+        # Clear caches after updating a book
+        cache.delete_pattern("book_list_*")  # Invalidate book lists
+        cache.delete(f"book_detail_{book_id}")  # Invalidate the specific book cache
+
+        return response
     queryset = Book.objects.all()
     serializer_class = BookSerializer
     lookup_field = 'id'  
@@ -192,6 +264,38 @@ class BookUpdateView(UpdateAPIView):
         return self.update(request, *args, **kwargs)
     
 class BookDeleteView(DestroyAPIView):
+    queryset = Book.objects.all()
+    lookup_field = 'id'  
+    permission_classes = [IsAdminUser]  
+
+    @swagger_auto_schema(
+        operation_description="Delete a specific book by ID.",
+        manual_parameters=[
+            openapi.Parameter(
+                name='id',
+                in_=openapi.IN_PATH,
+                description="The ID of the book to delete.",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            204: "Book deleted successfully",
+            403: "Permission denied - Only admins can delete books",
+            404: "Book not found",
+        }
+    )
+    def delete(self, request, *args, **kwargs):
+        """
+        Delete a book by ID.
+        """
+        book_id = kwargs.get('id')
+
+        # Clear caches before deleting the book
+        cache.delete_pattern("book_list_*")  # Invalidate book lists
+        cache.delete(f"book_detail_{book_id}")  # Invalidate the specific book cache
+
+        return self.destroy(request, *args, **kwargs)
     queryset = Book.objects.all()
     lookup_field = 'id'  
     permission_classes = [IsAdminUser]  
@@ -305,9 +409,76 @@ class ReviewDeleteView(DestroyAPIView):
         }
     )
     def delete(self, request, *args, **kwargs):
-        review = self.get_object() -
+        review = self.get_object() 
         if not self.has_permission(request, review):
             raise PermissionDenied("You do not have permission to delete this review.")
 
         self.perform_destroy(review)
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+class BookFilterView(ListAPIView):
+    queryset = Book.objects.all()
+    serializer_class = BookSerializer
+    pagination_class = PageNumberPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_fields = ['genre']
+    search_fields = ['title', 'author']
+
+    @swagger_auto_schema(
+        operation_description="Retrieve a filtered list of books based on search query and genre.",
+        manual_parameters=[
+            openapi.Parameter(
+                name='search',
+                in_=openapi.IN_QUERY,
+                description="Search by book title or author (partial match).",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                name='genre',
+                in_=openapi.IN_QUERY,
+                description="Filter by genre (Exact match).",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+            openapi.Parameter(
+                name='page',
+                in_=openapi.IN_QUERY,
+                description="Page number for pagination.",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                name='limit',
+                in_=openapi.IN_QUERY,
+                description="Number of books per page.",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Paginated list of filtered books",
+                schema=BookSerializer(many=True)
+            ),
+            400: "Invalid parameters",
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        """
+        Retrieve a paginated list of books with optional search and genre filtering.
+        Caches results to improve performance.
+        """
+        search_query = request.GET.get('search', '')
+        genre_filter = request.GET.get('genre', '')
+
+        cache_key = f"book_filter_search_{search_query}_genre_{genre_filter}_page_{request.GET.get('page', 1)}_limit_{request.GET.get('limit', 10)}"
+        cached_data = cache.get(cache_key)
+
+        if cached_data:
+            return Response(cached_data)
+
+        response = super().get(request, *args, **kwargs)
+        cache.set(cache_key, response.data, timeout=300)  # Cache for 5 minutes
+
+        return response

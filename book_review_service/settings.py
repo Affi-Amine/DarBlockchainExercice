@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-z6#naoe7#*fw157%#!h=@1=$)*a!cs0mturodge1&uby-h)h5d
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 
 AUTH_USER_MODEL = 'users.User'
 
@@ -45,7 +45,8 @@ INSTALLED_APPS = [
     'users',
     'drf_yasg',
     'rest_framework_simplejwt',
-    'books'
+    'books', 
+    'django_filters',
 ]
 
 REST_FRAMEWORK = {
@@ -192,4 +193,14 @@ LOGGING = {
             'propagate': True,
         },
     },
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/0", 
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
 }
