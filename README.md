@@ -50,7 +50,7 @@ DATABASE_USER=admin
 DATABASE_PASSWORD=admin
 DATABASE_HOST=db
 DATABASE_PORT=5432
-SECRET_KEY=“your-secure-secret-key”
+SECRET_KEY="q@d&npxdld)(@3_x^9hv69g0jwvu(@yo^g=*50d#v2w9io6@=6"
 LOCATION=“redis://127.0.0.1:6379/0”
 ```
 ---
@@ -127,7 +127,7 @@ docker-compose up --build
 ### 🔑 Authentication
 #### This project uses JWT authentication. Obtain a token by making a POST request to:
 ```bash
-obtain this jwt token when logging in in the endpoint /login
+obtain this jwt token when logging in the endpoint /login
 ```
 
 ---
