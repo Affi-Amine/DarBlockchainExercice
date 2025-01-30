@@ -199,7 +199,7 @@ LOGGING = {
     },
 }
 
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")  # Default to "redis" inside Docker
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")  
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 
 CACHES = {

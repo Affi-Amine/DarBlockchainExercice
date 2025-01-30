@@ -1,0 +1,31 @@
+# Environment Variables
+.env
+
+# Logs
+debug.log
+*.log
+
+# Database Dumps
+dump.rdb
+*.sqlite3
+
+# Django-related
+__pycache__/
+db.sqlite3
+*.pyc
+*.pyo
+*.pyd
+*.swp
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# VS Code
+.vscode/
+.idea/
+*.iml
+
+# Static & Media Files
+static/
+media/
